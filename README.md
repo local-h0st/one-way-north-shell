@@ -14,7 +14,7 @@ https://drustz.com/posts/2015/09/27/step-by-step-shell1/
 全局变量State保存当前shell的各种上下文信息
 
 
-
+specified:
 命名规则：
 
 变量：全小写，下划线
