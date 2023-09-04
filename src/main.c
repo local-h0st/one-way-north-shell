@@ -12,6 +12,10 @@ struct STATE_STRUCT {
     struct passwd *current_passwd;
 } State;
 
+void updateState(){
+    getcwd(State.cwd, STATE_CWD_LEN);           // cwd
+    State.current_passwd=getpwuid(getuid());    // current passwd file
+}
 
 void prompt(){
     // to do with 'State'
@@ -20,15 +24,19 @@ void prompt(){
     fgets(State.input, STATE_INPUT_LEN, stdin);
 }
 
-void updateState(){
-    getcwd(State.cwd, STATE_CWD_LEN);           // cwd
-    State.current_passwd=getpwuid(getuid());    // current passwd file
-}
 
 void printState(){
     // for debug
     printf("cwd: %s\n", State.cwd);
     printf("input: %s\n", State.input);
+}
+
+void printWelcome(){
+    printf("  ____             _      __            _  __         __  __    ");
+    printf(" / __ \\___  ___   | | /| / /__ ___ __  / |/ /__  ____/ /_/ /    ");
+    printf("/ /_/ / _ \\/ -_)  | |/ |/ / _ `/ // / /    / _ \\/ __/ __/ _ \\   ");
+    printf("\\____/_//_/\\__/   |__/|__/\\_,_/\\_, / /_/|_/\\___/_/  \\__/_//_/   ");
+    printf("                              /___/                             ");
 }
 
 int main(void){
