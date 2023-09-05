@@ -9,6 +9,11 @@
 #define STATE_CWD_LEN 128
 #define STATE_INPUT_LEN 128
 
+enum BUILD_IN_COMMAND{
+    NOT_BUILD_IN_CMD = 0,
+    CMD_SH_HELP,
+};
+
 struct COMMAND_FRAG {
     char *binname;
     char *arg;
@@ -148,13 +153,55 @@ int parseCommand(){
     }
 }
 
+enum BUILD_IN_COMMAND isBuildInCmd(char *command){
+    if(!strcmp(command,"sh-help")){
+        return CMD_SH_HELP;
+    }
+
+    return NOT_BUILD_IN_CMD;
+}
+
+int executeCommand(){
+    // var result_std standard output, can be passed through pipes.
+    if (State.command->binname == NULL)
+        return -1;
+    struct COMMAND_FRAG *current_bin = State.command;
+    while(1){
+        switch (isBuildInCmd(current_bin->binname)){
+        case CMD_SH_HELP:
+            printf("help document is not ready yet ~\n");
+            break;
+        default:
+            printf("not build-in commands, need to be executed out.");
+            // build arg list
+            char **arg_list = (char **)malloc()
+            // https://bmoos.github.io/2020/01/22/%E5%9C%A8Linux%E7%8E%AF%E5%A2%83%E4%B8%8B%E7%94%A8c%E5%AE%9E%E7%8E%B0%E7%AE%80%E6%98%93shell%E7%A8%8B%E5%BA%8F/
+            // https://bmoos.github.io/2020/01/15/fork/
+            break;
+        }
+
+
+
+        if (current_bin->pipe_next!=NULL){
+            // TODO
+        }
+        else{
+            // TODO
+            break;
+        }
+    }
+
+    return 1;
+}
+
 int main(void){
     printWelcome();
     while(1){
         updateState();
         prompt();
         parseCommand();
-        printState();
+        executeCommand();
+        // printState();
     }
     return 0;
 }

@@ -23,6 +23,6 @@ specified:
 
 全局变量：首字母大写，下划线
 
-结构体、宏定义：全大写，下划线
+结构体、宏定义 and enum：全大写，下划线
 
 parse input to link table, to handle with |
