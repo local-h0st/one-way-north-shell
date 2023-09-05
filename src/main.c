@@ -1,16 +1,18 @@
 #include <stdio.h>
-#include <unistd.h>     // getcwd
-#include <sys/types.h>  // uid_t
+#include <unistd.h>     // getcwd, fork
+#include <sys/types.h>  // uid_t, pid_t
 #include <pwd.h>        // getpwuid
 #include <string.h>     // strcpy
 #include <stdlib.h>     // malloc
 #include <ctype.h>      // isspace
+#include <wait.h>       // waitpid
 
 #define STATE_CWD_LEN 128
 #define STATE_INPUT_LEN 128
 
 enum BUILD_IN_COMMAND{
     NOT_BUILD_IN_CMD = 0,
+    NULL_BINNAME,
     CMD_SH_HELP,
 };
 
@@ -52,7 +54,7 @@ struct STATE_STRUCT {
     char input[STATE_INPUT_LEN];
     struct passwd *current_passwd;
 
-    struct COMMAND_FRAG *command;   // remember to delete after every loop.
+    struct COMMAND_FRAG *command;
 } State;
 
 
@@ -154,9 +156,10 @@ int parseCommand(){
 }
 
 enum BUILD_IN_COMMAND isBuildInCmd(char *command){
-    if(!strcmp(command,"sh-help")){
+    if (command==NULL)
+        return NULL_BINNAME;
+    if(!strcmp(command,"sh-help"))
         return CMD_SH_HELP;
-    }
 
     return NOT_BUILD_IN_CMD;
 }
@@ -168,15 +171,52 @@ int executeCommand(){
     struct COMMAND_FRAG *current_bin = State.command;
     while(1){
         switch (isBuildInCmd(current_bin->binname)){
+        case NULL_BINNAME:
+            printf("binname null.\n");
+            break;
         case CMD_SH_HELP:
             printf("help document is not ready yet ~\n");
             break;
         default:
-            printf("not build-in commands, need to be executed out.");
-            // build arg list
-            char **arg_list = (char **)malloc()
-            // https://bmoos.github.io/2020/01/22/%E5%9C%A8Linux%E7%8E%AF%E5%A2%83%E4%B8%8B%E7%94%A8c%E5%AE%9E%E7%8E%B0%E7%AE%80%E6%98%93shell%E7%A8%8B%E5%BA%8F/
-            // https://bmoos.github.io/2020/01/15/fork/
+            // not build-in, build arg list first
+            struct COMMAND_FRAG *temp = current_bin;
+            int count = 1;
+            while (temp->arg_next!=NULL){
+                count++;
+                temp = temp->arg_next;
+            }
+            char **arg_list = (char **)malloc((count+1)*sizeof(char *));    // TODO free
+            arg_list[0] = current_bin->binname;
+            arg_list[count] = NULL;
+            temp = current_bin->arg_next;
+            count = 1;
+            while(temp!=NULL){
+                arg_list[count] = temp->arg;
+                count++;
+                temp = temp->arg_next;
+            }
+            // call fork
+            pid_t pid = fork();
+            pid_t wpid;
+            int status;
+            if (pid == 0){      // child
+                if (execvp(arg_list[0], arg_list) == -1){
+                    perror("child error occured during execution, force exit: ");
+                    exit(1);
+                }
+            }
+            else if (pid < 0){  // failed to fork
+                perror("fork failed.");
+                exit(1);
+            }
+            else{               // parent
+                do{
+                    wpid = waitpid(pid, &status, WUNTRACED);
+                } while (!WIFEXITED(status) && !WIFSIGNALED(status));
+            }
+            
+            
+
             break;
         }
 
