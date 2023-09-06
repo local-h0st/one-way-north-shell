@@ -9,6 +9,7 @@
 
 #define STATE_CWD_LEN 128
 #define STATE_INPUT_LEN 128
+#define PIPE_READ_BUFF_SIZE 2048
 
 enum BUILD_IN_COMMAND{
     NOT_BUILD_IN_CMD = 0,
@@ -169,9 +170,26 @@ int executeCommand(){
     if (State.command->binname == NULL)
         return -1;
     struct COMMAND_FRAG *current_bin = State.command;
+    int pipe_fd[2];
+    if(pipe(pipe_fd)==-1){
+        perror("pipe create failed.");
+        return 1;
+    }
+    else {
+        fprintf(stdout,"%d, %d\n",pipe_fd[0],pipe_fd[1]);
+    }
+    fprintf(stdout,"aaaaa\n");
+    int from_pipe = 0;
+    int to_pipe = 0;
     while(1){
+        fprintf(stdout,"bbbbb\n");
+        if(current_bin->pipe_next != NULL)
+            to_pipe = 1;
+        else
+            to_pipe = 0;
+
         switch (isBuildInCmd(current_bin->binname)){
-        case NULL_BINNAME:
+        case NULL_BINNAME:  // can't be empty
             printf("binname null.\n");
             break;
         case CMD_SH_HELP:
@@ -185,7 +203,7 @@ int executeCommand(){
                 count++;
                 temp = temp->arg_next;
             }
-            char **arg_list = (char **)malloc((count+1)*sizeof(char *));    // TODO free
+            char **arg_list = (char **)malloc((count+1)*sizeof(char *));
             arg_list[0] = current_bin->binname;
             arg_list[count] = NULL;
             temp = current_bin->arg_next;
@@ -200,8 +218,19 @@ int executeCommand(){
             pid_t wpid;
             int status;
             if (pid == 0){      // child
+                // redirect
+                if (to_pipe){
+                    dup2(pipe_fd[0],STDOUT_FILENO);
+                    dup2(pipe_fd[0],STDERR_FILENO);
+                }
+                if(from_pipe){
+                    dup2(pipe_fd[1],STDIN_FILENO);
+                }
+                close(pipe_fd[0]);
+                close(pipe_fd[1]);
                 if (execvp(arg_list[0], arg_list) == -1){
-                    perror("child error occured during execution, force exit: ");
+                    // fprintf(stdout,"executing %s failed\n",arg_list[0]);
+                    perror("child process: ");
                     exit(1);
                 }
             }
@@ -214,22 +243,22 @@ int executeCommand(){
                     wpid = waitpid(pid, &status, WUNTRACED);
                 } while (!WIFEXITED(status) && !WIFSIGNALED(status));
             }
-            
-            
-
+            free(arg_list);
             break;
         }
 
-
-
-        if (current_bin->pipe_next!=NULL){
-            // TODO
+        if(current_bin->pipe_next != NULL){
+            current_bin = current_bin->pipe_next;
+            from_pipe = 1;
         }
         else{
-            // TODO
             break;
         }
+
     }
+
+    close(pipe_fd[0]);
+    close(pipe_fd[1]);
 
     return 1;
 }
