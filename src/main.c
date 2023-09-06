@@ -54,8 +54,8 @@ struct STATE_STRUCT {
     char cwd[STATE_CWD_LEN];
     char input[STATE_INPUT_LEN];
     struct passwd *current_passwd;
-
     struct COMMAND_FRAG *command;
+    int *pipe_fd[2];
 } State;
 
 
@@ -96,9 +96,11 @@ void printWelcome(){
     printf("                             redh3tALWAYS                           \n");
     printf("\n");
 
-    // do something;
+    // do some init
     State.command = (struct COMMAND_FRAG *)malloc(sizeof(struct COMMAND_FRAG));
     initCmdFragNull(State.command);
+    State.pipe_fd[0] = NULL;
+    State.pipe_fd[1] = NULL;
 }
 
 int parseCommand(){
@@ -165,91 +167,101 @@ enum BUILD_IN_COMMAND isBuildInCmd(char *command){
     return NOT_BUILD_IN_CMD;
 }
 
+int executeOne(struct COMMAND_FRAG *current_bin, int pipe[2],int from_pipe,int to_pipe){
+    // build arg list first
+    struct COMMAND_FRAG *temp = current_bin;
+    int count = 1;
+    while (temp->arg_next!=NULL){
+        count++;
+        temp = temp->arg_next;
+    }
+    char **arg_list = (char **)malloc((count+1)*sizeof(char *));
+    arg_list[0] = current_bin->binname;
+    arg_list[count] = NULL;
+    temp = current_bin->arg_next;
+    count = 1;
+    while(temp!=NULL){
+        arg_list[count] = temp->arg;
+        count++;
+        temp = temp->arg_next;
+    }
+
+    // call fork
+    pid_t pid = fork();
+    pid_t wpid;
+    int status;
+    if (pid == 0){      // child process
+        // redirect
+        if (to_pipe){
+            dup2(State.pipe_fd[pipe_index % 2][1],STDOUT_FILENO);   // save output to current pipe
+        }   // STDERR_FILENO
+        if(from_pipe){
+            dup2(State.pipe_fd[(pipe_index+1) % 2][0],STDIN_FILENO);    // use data from last pipe
+        }
+        // close fd ?
+        if (execvp(arg_list[0], arg_list) == -1){
+            perror("child process: ");
+            exit(1);
+        }
+    }
+    else if (pid > 0){               // parent
+        // do{
+        //     wpid = waitpid(pid, &status, WNOHANG|WUNTRACED);
+        // } while (!WIFEXITED(status) && !WIFSIGNALED(status));
+        printf("waiting pid: %d\n", pid);
+        wpid = wait(&status);
+        printf("wpid: %d\n",wpid);
+        // TODO here.
+        // ls -a | grep i
+
+    }
+    else {
+        perror("fork failed.");
+        exit(1);
+    }
+
+    free(arg_list);
+}
+
 int executeCommand(){
     // var result_std standard output, can be passed through pipes.
     if (State.command->binname == NULL)
         return -1;
     struct COMMAND_FRAG *current_bin = State.command;
-    int pipe_fd[2];
-    if(pipe(pipe_fd)==-1){
-        perror("pipe create failed.");
-        return 1;
-    }
-    else {
-        fprintf(stdout,"%d, %d\n",pipe_fd[0],pipe_fd[1]);
-    }
-    fprintf(stdout,"aaaaa\n");
+    State.pipe_fd[0] = (int *)malloc(2*sizeof(int));
+    State.pipe_fd[1] = (int *)malloc(2*sizeof(int));
+    pipe(State.pipe_fd[0]);
+    pipe(State.pipe_fd[1]);
+    int pipe_index = 0;
     int from_pipe = 0;
     int to_pipe = 0;
     while(1){
-        fprintf(stdout,"bbbbb\n");
         if(current_bin->pipe_next != NULL)
             to_pipe = 1;
         else
             to_pipe = 0;
 
-        switch (isBuildInCmd(current_bin->binname)){
-        case NULL_BINNAME:  // can't be empty
-            printf("binname null.\n");
-            break;
-        case CMD_SH_HELP:
-            printf("help document is not ready yet ~\n");
-            break;
-        default:
-            // not build-in, build arg list first
-            struct COMMAND_FRAG *temp = current_bin;
-            int count = 1;
-            while (temp->arg_next!=NULL){
-                count++;
-                temp = temp->arg_next;
-            }
-            char **arg_list = (char **)malloc((count+1)*sizeof(char *));
-            arg_list[0] = current_bin->binname;
-            arg_list[count] = NULL;
-            temp = current_bin->arg_next;
-            count = 1;
-            while(temp!=NULL){
-                arg_list[count] = temp->arg;
-                count++;
-                temp = temp->arg_next;
-            }
-            // call fork
-            pid_t pid = fork();
-            pid_t wpid;
-            int status;
-            if (pid == 0){      // child
-                // redirect
-                if (to_pipe){
-                    dup2(pipe_fd[0],STDOUT_FILENO);
-                    dup2(pipe_fd[0],STDERR_FILENO);
-                }
-                if(from_pipe){
-                    dup2(pipe_fd[1],STDIN_FILENO);
-                }
-                close(pipe_fd[0]);
-                close(pipe_fd[1]);
-                if (execvp(arg_list[0], arg_list) == -1){
-                    // fprintf(stdout,"executing %s failed\n",arg_list[0]);
-                    perror("child process: ");
-                    exit(1);
-                }
-            }
-            else if (pid < 0){  // failed to fork
-                perror("fork failed.");
-                exit(1);
-            }
-            else{               // parent
-                do{
-                    wpid = waitpid(pid, &status, WUNTRACED);
-                } while (!WIFEXITED(status) && !WIFSIGNALED(status));
-            }
-            free(arg_list);
-            break;
+        if(isBuildInCmd(current_bin->binname)==NOT_BUILD_IN_CMD){
+ 
         }
+        else {
+            switch (isBuildInCmd(current_bin->binname)){
+            case NULL_BINNAME:  // can't be empty
+                printf("binname null.\n");
+                break;
+            case CMD_SH_HELP:
+                printf("help document is not ready yet ~\n");
+                break;
+            default:
+                break;
+            }
+        }
+
 
         if(current_bin->pipe_next != NULL){
             current_bin = current_bin->pipe_next;
             from_pipe = 1;
+            pipe_index++;
         }
         else{
             break;
@@ -257,9 +269,12 @@ int executeCommand(){
 
     }
 
-    close(pipe_fd[0]);
-    close(pipe_fd[1]);
-
+    close(State.pipe_fd[0][0]);
+    close(State.pipe_fd[0][1]);
+    close(State.pipe_fd[1][0]);
+    close(State.pipe_fd[1][1]);
+    free(State.pipe_fd[0]);
+    free(State.pipe_fd[1]);
     return 1;
 }
 

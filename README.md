@@ -17,6 +17,7 @@ https://www.cnblogs.com/mickole/p/3187409.html
 
 全局变量State保存当前shell的各种上下文信息
 
+https://developer.aliyun.com/article/990596
 
 specified:
 命名规则：
@@ -32,3 +33,5 @@ specified:
 parse input to link table, to handle with |
 
 child process forked, the output of the child is still put to stdout, meaning the screen. The output together doesn't mean execute together.
+
+the pipe given by pipe() func has direction, never change it. nowhere to search, I can fix it only because I thought out this.
