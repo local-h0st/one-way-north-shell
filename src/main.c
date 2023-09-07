@@ -11,6 +11,9 @@
 #define STATE_INPUT_LEN 128
 #define PIPE_READ_BUFF_SIZE 8192
 
+// prototype printState(), used for dev & debug
+void printState(int);
+
 enum BUILD_IN_COMMAND{
     NOT_BUILD_IN_CMD = 0,
     NULL_BINNAME,
@@ -25,38 +28,70 @@ enum BUILD_IN_COMMAND isBuildInCmd(char *command){
     return NOT_BUILD_IN_CMD;
 }
 
+struct REDIRECT_INFO{
+    int direction;  // 1 >, 2 <
+    char *filename;
+    int symbol_count;
+    struct REDIRECT_INFO *next;
+};
+int initRedirNull(struct REDIRECT_INFO *r){
+    r->direction = 0;
+    r->filename = NULL;
+    r->symbol_count = 0;
+    r->next = NULL;
+    return 4;
+}
+int deleteRedirAll(struct REDIRECT_INFO *r){    // will left root node
+    if(r->filename != NULL){
+        free(r->filename);
+    }
+    if(r->next!=NULL){
+        deleteRedirAll(r->next);
+        free(r->next);
+    }
+    return initRedirNull(r);
+}
+
 struct COMMAND_FRAG {
     char *binname;
     char *arg;
     struct COMMAND_FRAG *pipe_next;
     struct COMMAND_FRAG *arg_next;
-    // TODO redirect
+    struct REDIRECT_FRAG *redirect;
 };
 int initCmdFragNull(struct COMMAND_FRAG *frag){
     frag->binname = NULL;
     frag->arg = NULL;
     frag->pipe_next = NULL;
     frag->arg_next = NULL;
-    return 4;
+    frag->redirect = NULL;
+    return 5;
 }
-int deleteFragAll(struct COMMAND_FRAG *frag){
-    // will left the root node
-    if(frag->binname!=NULL)
+int deleteFragAll(struct COMMAND_FRAG *frag){   // will left the root node
+    if(frag->binname != NULL){
         free(frag->binname);
-    if(frag->arg!=NULL)
+    }
+    if(frag->arg != NULL){
         free(frag->arg);
-    if(frag->pipe_next!=NULL){
+    }
+    if(frag->pipe_next != NULL){
         deleteFragAll(frag->pipe_next);
         free(frag->pipe_next);
     }
-    if(frag->arg_next!=NULL){
+    if(frag->arg_next != NULL){
         deleteFragAll(frag->arg_next);
         free(frag->arg_next);
+    }
+    if(frag->redirect != NULL){
+        deleteRedirAll(frag->redirect);
+        free(frag->redirect);
     }
     return initCmdFragNull(frag);
 }
 
+
 struct STATE_STRUCT {
+    // TODO need free
     char cwd[STATE_CWD_LEN];
     char input[STATE_INPUT_LEN];
     struct passwd *current_passwd;
@@ -81,14 +116,69 @@ void prompt(){  // here requires the input
     // readline lib ?
 }
 
+int parseRedirect(struct COMMAND_FRAG * current_bin){
+    struct COMMAND_FRAG *true_arg = current_bin;
+    struct COMMAND_FRAG *arg = current_bin->arg_next;
+    struct REDIRECT_INFO *r = current_bin->redirect;
+    
+    while(arg != NULL && arg->arg != NULL){
+        // for(int i; arg->arg[i] != '\0'; i++){
+        //     if(arg->arg[i] == '>'){
+        //         symbol_type = 1;
+        //     }
+        //     else if(arg->arg[i] == '<'){
+        //         symbol_type = 2;
+        //     }
+        //     else{
+        //         continue;
+        //     }
+        // }
+        /*
+        >> << fd> >& 
+        too hard to judge, must follow my gramma !
+        */
+
+        if (!strcmp(arg->arg,">")){
+            r = (struct REDIRECT_INFO *)malloc(sizeof(struct REDIRECT_INFO));
+            initRedirNull(r);
+            r->direction = 1;
+            r->filename = (char *)malloc((strlen(arg->arg_next->arg)+1)*sizeof(char));
+            strcpy(r->filename,arg->arg_next->arg);
+            r->symbol_count = 1;
+            arg = arg->arg_next->arg_next;
+        }
+        else if (!strcmp(arg->arg,"<")){
+            // here
+        }
+        else if (!strcmp(arg->arg,">>")){
+
+        }
+        else if (!strcmp(arg->arg,"<<")){
+
+            r = r->next;
+        }
+        else{
+            true_arg = arg;
+            arg = arg->arg_next;
+        }
+
+    }
+    // put into to parseCommand()
+    // remember to delete redirect part, then the left raw input can be parsed by parseCommand()
+    // modify execute function to redirect.
+}
+
 int parseCommand(){
-    deleteFragAll(State.command);
     char temp[STATE_INPUT_LEN];
     int temp_index = 0;
     int is_binname = 2; // 2 the first, 1 after |, 0 the arg.
     struct COMMAND_FRAG *bin_head = NULL;
     struct COMMAND_FRAG *last_arg = NULL;
+    // int quot_count = 0;  // TODO add quot support
     for(int i = 0; i < STATE_INPUT_LEN && State.input[i] != '\0'; i++){ // last is \n and then is \0
+        // if (State.input[i] == '"')
+        //     quot_count++;
+        // if ((!isspace(State.input[i]) && State.input[i] != '|' && quot_count%2 == 0) || quot_count%2 == 1){
         if (!isspace(State.input[i]) && State.input[i] != '|'){
             temp[temp_index] = State.input[i];
             temp_index++;
@@ -133,10 +223,13 @@ int parseCommand(){
         if (State.input[i] == '|')
             is_binname = 1;
     }
+
+    // TODO for every bin parse redirect
 }
 
 int executeOnce(struct COMMAND_FRAG *current_bin, int read_pipe_fd, int write_pipe_fd){
     // build arg list first
+    // TODO exclude redirect
     struct COMMAND_FRAG *temp = current_bin;
     int count = 1;
     while (temp->arg_next!=NULL){
@@ -160,7 +253,7 @@ int executeOnce(struct COMMAND_FRAG *current_bin, int read_pipe_fd, int write_pi
         // redirect
         if (write_pipe_fd != -1){
             dup2(write_pipe_fd,STDOUT_FILENO);
-            dup2(write_pipe_fd,STDERR_FILENO);
+            // dup2(write_pipe_fd,STDERR_FILENO);  // pipe shouldn't handle stderr
             close(write_pipe_fd);
         }
         if(read_pipe_fd != -1){
@@ -249,31 +342,44 @@ int executeCommand(){
     return 1;
 }
 
-void printState(){
-    // for debug
-    struct COMMAND_FRAG * bin = State.command;
-    while(bin!=NULL){
-        printf("binname: %s\n",bin->binname);
-        struct COMMAND_FRAG * arg = bin->arg_next;
-        while(arg!=NULL){
-            printf("arg: %s\n",arg->arg);
-            arg = arg->arg_next;
+void printState(int mode){
+    switch (mode) {
+    case 1:
+        // print binnames and args
+        struct COMMAND_FRAG * bin = State.command;
+        while(bin!=NULL){
+            printf("binname: %s\n",bin->binname);
+            struct COMMAND_FRAG * arg = bin->arg_next;
+            while(arg!=NULL){
+                printf("arg: %s\n",arg->arg);
+                arg = arg->arg_next;
+            }
+            bin = bin->pipe_next;
         }
-        bin = bin->pipe_next;
+        break;
+    default:
+        printf("Go to take a nap..\n");
+        break;
     }
+    printf("Pressssss enter to continue...");
+    getchar();
 }
 
 int main(void){
     // init
     State.command = (struct COMMAND_FRAG *)malloc(sizeof(struct COMMAND_FRAG));
     initCmdFragNull(State.command);
-    getcwd(State.cwd, STATE_CWD_LEN);           // cwd
     State.current_passwd=getpwuid(getuid());    // current passwd file
+    getcwd(State.cwd, STATE_CWD_LEN);           // cwd
     printWelcome();
     while(1){
         prompt();
         parseCommand();
+        // printState(1);
         executeCommand();
+
+        // clear
+        deleteFragAll(State.command);   // clear history here, but history can be saved if there is another link table.
     }
     return 0;
 }

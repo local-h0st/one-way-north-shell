@@ -38,13 +38,19 @@ To handle with pipe `|`, parse function will do these: if it meets a `|`, the ne
 Redirection is still under development, but soon.
 
 
+### About Redirection
+Hard to recognize, we assume that the source of redirect 'from' less then 2
 
+As I test on kali's zsh, `echo 'test' 1 > a.txt && cat a.txt` finally gets `test 1`, and `echo 'test' 1 > a.txt && cat a.txt`gets `test`, that means there shouldn't be any space between fd and redirection symbol, but there can be space after the symbol.
+
+`cat | wc -l < README.md` will stuck on kali zsh, meaning README.md won't be treated as input to `cat`. Redirection needs the highest priviledge.
 
 
 
 ### Things Not So Important
 
 **Some Thinking:**
+
 child process forked, the output of the child is still put to the screen ( stdout ). Child and parent output together doesn't mean they execute together.
 
 the pipe given by pipe() func has direction, never change it. nowhere to search, I can fix it only because I thought out this.
@@ -57,6 +63,7 @@ do{
 ```
 
 **Fixed bugs:**
+
 The first time I use pipe() func to create pipe I refered to many blogs. I thought the examples given by other's blogs are werid, I think data should get into a pipe from p[0] and go out from p[1], but examples are the opposite. At first I followed my thought and error occurs, then I thought to myself, will the pipe has directions? Actually indeed, after my attempt to swap the read port and the write port. The pipe created by pipe() is not just two normal fds, they have directions, stdout/stderr should be redirected to p[1] and stdin should ben read from p[0].
 
 Here's another.
@@ -68,6 +75,7 @@ After fixed this, I found if a command contains more than 2 ( or 3? can't rememb
 Finally `ls /proc |grep 7| grep 8|grep 86 |grep 2 passed!` passed my code and executed successfully!
 
 **Temporary References:**
+
 https://mbinary.xyz/simple-shell.html
 
 https://zhuanlan.zhihu.com/p/360923356
