@@ -16,6 +16,14 @@ enum BUILD_IN_COMMAND{
     NULL_BINNAME,
     CMD_SH_HELP,
 };
+enum BUILD_IN_COMMAND isBuildInCmd(char *command){
+    if (command==NULL)
+        return NULL_BINNAME;
+    if(!strcmp(command,"sh-help"))
+        return CMD_SH_HELP;
+
+    return NOT_BUILD_IN_CMD;
+}
 
 struct COMMAND_FRAG {
     char *binname;
@@ -24,7 +32,6 @@ struct COMMAND_FRAG {
     struct COMMAND_FRAG *arg_next;
     // TODO redirect
 };
-
 int initCmdFragNull(struct COMMAND_FRAG *frag){
     frag->binname = NULL;
     frag->arg = NULL;
@@ -32,7 +39,6 @@ int initCmdFragNull(struct COMMAND_FRAG *frag){
     frag->arg_next = NULL;
     return 4;
 }
-
 int deleteFragAll(struct COMMAND_FRAG *frag){
     // will left the root node
     if(frag->binname!=NULL)
@@ -57,34 +63,6 @@ struct STATE_STRUCT {
     struct COMMAND_FRAG *command;
 } State;
 
-
-void updateState(){
-    getcwd(State.cwd, STATE_CWD_LEN);           // cwd
-    State.current_passwd=getpwuid(getuid());    // current passwd file
-}
-
-void prompt(){
-    // to do with 'State'
-    // here requires the input
-    printf("(%s) might be a prompt > ", State.current_passwd->pw_name);
-    fgets(State.input, STATE_INPUT_LEN, stdin);
-}
-
-
-void printState(){
-    // for debug
-    struct COMMAND_FRAG * bin = State.command;
-    while(bin!=NULL){
-        printf("binname: %s\n",bin->binname);
-        struct COMMAND_FRAG * arg = bin->arg_next;
-        while(arg!=NULL){
-            printf("arg: %s\n",arg->arg);
-            arg = arg->arg_next;
-        }
-        bin = bin->pipe_next;
-    }
-}
-
 void printWelcome(){
     printf("  ____             _      __            _  __         __  __        \n");
     printf(" / __ \\___  ___   | | /| / /__ ___ __  / |/ /__  ____/ /_/ /       \n");
@@ -92,12 +70,15 @@ void printWelcome(){
     printf("\\____/_//_/\\__/   |__/|__/\\_,_/\\_, / /_/|_/\\___/_/  \\__/_//_/ \n");
     printf("                              /___/                                 \n");
     printf("\n");
-    printf("                      Powwered-by redh3tALWAYS                      \n");
+    printf("                Powwered-by redh3tALWAYS                            \n");
     printf("\n");
-
-    // do some init
-    State.command = (struct COMMAND_FRAG *)malloc(sizeof(struct COMMAND_FRAG));
-    initCmdFragNull(State.command);
+    printf("\n");
+}
+void prompt(){  // here requires the input
+    printf("(%s) might be a prompt > ", State.current_passwd->pw_name);
+    // TODO with 'State'
+    fgets(State.input, STATE_INPUT_LEN, stdin);
+    // readline lib ?
 }
 
 int parseCommand(){
@@ -154,15 +135,6 @@ int parseCommand(){
     }
 }
 
-enum BUILD_IN_COMMAND isBuildInCmd(char *command){
-    if (command==NULL)
-        return NULL_BINNAME;
-    if(!strcmp(command,"sh-help"))
-        return CMD_SH_HELP;
-
-    return NOT_BUILD_IN_CMD;
-}
-
 int executeOnce(struct COMMAND_FRAG *current_bin, int read_pipe_fd, int write_pipe_fd){
     // build arg list first
     struct COMMAND_FRAG *temp = current_bin;
@@ -212,8 +184,6 @@ int executeOnce(struct COMMAND_FRAG *current_bin, int read_pipe_fd, int write_pi
     free(arg_list);
     return 1;
 }
-
-
 int executeCommand(){
     if (State.command->binname == NULL)
         return -1;
@@ -279,15 +249,31 @@ int executeCommand(){
     return 1;
 }
 
+void printState(){
+    // for debug
+    struct COMMAND_FRAG * bin = State.command;
+    while(bin!=NULL){
+        printf("binname: %s\n",bin->binname);
+        struct COMMAND_FRAG * arg = bin->arg_next;
+        while(arg!=NULL){
+            printf("arg: %s\n",arg->arg);
+            arg = arg->arg_next;
+        }
+        bin = bin->pipe_next;
+    }
+}
 
 int main(void){
+    // init
+    State.command = (struct COMMAND_FRAG *)malloc(sizeof(struct COMMAND_FRAG));
+    initCmdFragNull(State.command);
+    getcwd(State.cwd, STATE_CWD_LEN);           // cwd
+    State.current_passwd=getpwuid(getuid());    // current passwd file
     printWelcome();
     while(1){
-        updateState();
         prompt();
         parseCommand();
         executeCommand();
-        // printState();
     }
     return 0;
 }
