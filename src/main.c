@@ -6,6 +6,9 @@
 #include <stdlib.h>     // malloc
 #include <ctype.h>      // isspace
 #include <wait.h>       // waitpid
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #define STATE_CWD_LEN 128
 #define STATE_INPUT_LEN 128
@@ -57,7 +60,7 @@ struct COMMAND_FRAG {
     char *arg;
     struct COMMAND_FRAG *pipe_next;
     struct COMMAND_FRAG *arg_next;
-    struct REDIRECT_FRAG *redirect;
+    struct REDIRECT_INFO *redirect;
 };
 int initCmdFragNull(struct COMMAND_FRAG *frag){
     frag->binname = NULL;
@@ -122,40 +125,90 @@ int parseRedirect(struct COMMAND_FRAG * current_bin){
     struct REDIRECT_INFO *r = current_bin->redirect;
     
     while(arg != NULL && arg->arg != NULL){
-        // for(int i; arg->arg[i] != '\0'; i++){
-        //     if(arg->arg[i] == '>'){
-        //         symbol_type = 1;
-        //     }
-        //     else if(arg->arg[i] == '<'){
-        //         symbol_type = 2;
-        //     }
-        //     else{
-        //         continue;
-        //     }
-        // }
         /*
         >> << fd> >& 
         too hard to judge, must follow my gramma !
         */
 
         if (!strcmp(arg->arg,">")){
-            r = (struct REDIRECT_INFO *)malloc(sizeof(struct REDIRECT_INFO));
+            if (current_bin->redirect == NULL){
+                current_bin->redirect = (struct REDIRECT_INFO *)malloc(sizeof(struct REDIRECT_INFO));
+                r = current_bin->redirect;
+            }
+            else{
+                r->next = (struct REDIRECT_INFO *)malloc(sizeof(struct REDIRECT_INFO));
+                r = r->next;
+            }
             initRedirNull(r);
             r->direction = 1;
+            r->symbol_count = 1;
             r->filename = (char *)malloc((strlen(arg->arg_next->arg)+1)*sizeof(char));
             strcpy(r->filename,arg->arg_next->arg);
-            r->symbol_count = 1;
-            arg = arg->arg_next->arg_next;
+            true_arg->arg_next = arg->arg_next->arg_next;
+            free(arg->arg_next->arg);
+            free(arg->arg);
+            free(arg);
+            arg = true_arg->arg_next;
         }
         else if (!strcmp(arg->arg,"<")){
-            // here
+            if (current_bin->redirect == NULL){
+                current_bin->redirect = (struct REDIRECT_INFO *)malloc(sizeof(struct REDIRECT_INFO));
+                r = current_bin->redirect;
+            }
+            else{
+                r->next = (struct REDIRECT_INFO *)malloc(sizeof(struct REDIRECT_INFO));
+                r = r->next;
+            }
+            initRedirNull(r);
+            r->direction = 2;
+            r->symbol_count = 1;
+            r->filename = (char *)malloc((strlen(arg->arg_next->arg)+1)*sizeof(char));
+            strcpy(r->filename,arg->arg_next->arg);
+            true_arg->arg_next = arg->arg_next->arg_next;
+            free(arg->arg_next->arg);
+            free(arg->arg);
+            free(arg);
+            arg = true_arg->arg_next;
         }
         else if (!strcmp(arg->arg,">>")){
-
+            if (current_bin->redirect == NULL){
+                current_bin->redirect = (struct REDIRECT_INFO *)malloc(sizeof(struct REDIRECT_INFO));
+                r = current_bin->redirect;
+            }
+            else{
+                r->next = (struct REDIRECT_INFO *)malloc(sizeof(struct REDIRECT_INFO));
+                r = r->next;
+            }
+            initRedirNull(r);
+            r->direction = 1;
+            r->symbol_count = 2;
+            r->filename = (char *)malloc((strlen(arg->arg_next->arg)+1)*sizeof(char));
+            strcpy(r->filename,arg->arg_next->arg);
+            true_arg->arg_next = arg->arg_next->arg_next;
+            free(arg->arg_next->arg);
+            free(arg->arg);
+            free(arg);
+            arg = true_arg->arg_next;
         }
         else if (!strcmp(arg->arg,"<<")){
-
-            r = r->next;
+            if (current_bin->redirect == NULL){
+                current_bin->redirect = (struct REDIRECT_INFO *)malloc(sizeof(struct REDIRECT_INFO));
+                r = current_bin->redirect;
+            }
+            else{
+                r->next = (struct REDIRECT_INFO *)malloc(sizeof(struct REDIRECT_INFO));
+                r = r->next;
+            }
+            initRedirNull(r);
+            r->direction = 2;
+            r->symbol_count = 2;
+            r->filename = (char *)malloc((strlen(arg->arg_next->arg)+1)*sizeof(char));
+            strcpy(r->filename,arg->arg_next->arg);
+            true_arg->arg_next = arg->arg_next->arg_next;
+            free(arg->arg_next->arg);
+            free(arg->arg);
+            free(arg);
+            arg = true_arg->arg_next;
         }
         else{
             true_arg = arg;
@@ -163,9 +216,6 @@ int parseRedirect(struct COMMAND_FRAG * current_bin){
         }
 
     }
-    // put into to parseCommand()
-    // remember to delete redirect part, then the left raw input can be parsed by parseCommand()
-    // modify execute function to redirect.
 }
 
 int parseCommand(){
@@ -175,6 +225,7 @@ int parseCommand(){
     struct COMMAND_FRAG *bin_head = NULL;
     struct COMMAND_FRAG *last_arg = NULL;
     // int quot_count = 0;  // TODO add quot support
+    // first parse redirect as params, then parse redirect info, because redirect needs higher privilege
     for(int i = 0; i < STATE_INPUT_LEN && State.input[i] != '\0'; i++){ // last is \n and then is \0
         // if (State.input[i] == '"')
         //     quot_count++;
@@ -224,7 +275,12 @@ int parseCommand(){
             is_binname = 1;
     }
 
-    // TODO for every bin parse redirect
+    // TODO for every bin parse redirect info
+    struct COMMAND_FRAG *current_bin = State.command;
+    while (current_bin != NULL){
+        parseRedirect(current_bin);
+        current_bin = current_bin->pipe_next;
+    }
 }
 
 int executeOnce(struct COMMAND_FRAG *current_bin, int read_pipe_fd, int write_pipe_fd){
@@ -250,15 +306,43 @@ int executeOnce(struct COMMAND_FRAG *current_bin, int read_pipe_fd, int write_pi
     // call fork
     pid_t pid = fork();
     if (pid == 0){      // child process
-        // redirect
+        // pipe and redirect
         if (write_pipe_fd != -1){
             dup2(write_pipe_fd,STDOUT_FILENO);
             // dup2(write_pipe_fd,STDERR_FILENO);  // pipe shouldn't handle stderr
             close(write_pipe_fd);
-        }
+        }        
         if(read_pipe_fd != -1){
             dup2(read_pipe_fd,STDIN_FILENO);
             close(read_pipe_fd);
+        }
+
+        struct REDIRECT_INFO *r = current_bin->redirect;
+        while (r != NULL){
+            if(r->direction == 1 && write_pipe_fd == -1){
+                int w_fd;
+                if(r->symbol_count==1){
+                    w_fd = open(r->filename, O_WRONLY|O_CREAT|O_TRUNC);
+                }
+                else{
+                    w_fd = open(r->filename, O_WRONLY|O_CREAT|O_APPEND);
+                }
+                dup2(w_fd,STDOUT_FILENO);
+                close(w_fd);
+            }
+            else if(r->direction == 2 && read_pipe_fd == -1){
+                int r_fd = open(r->filename, O_RDONLY);
+                if (r_fd == -1){
+                    perror("redirect");
+                    exit(1);
+                }
+                dup2(r_fd, STDIN_FILENO);
+                close(r_fd);
+            }
+            else{
+
+            }
+            r = r->next;
         }
         // execute        
         if (execvp(arg_list[0], arg_list) == -1){
@@ -304,6 +388,7 @@ int executeCommand(){
 
         switch (isBuildInCmd(current_bin->binname)){
         // TODO add pipe support for build-in commands.
+        // TODO add redirect suuport for build-in commands.
         case CMD_SH_HELP:
             printf("help document is not ready yet ~\n");
             break;
@@ -354,6 +439,13 @@ void printState(int mode){
                 printf("arg: %s\n",arg->arg);
                 arg = arg->arg_next;
             }
+
+            struct REDIRECT_INFO *r = bin->redirect;
+            while (r != NULL){
+                printf("redirect direction: %d, filename: %s, symbol count: %d\n", r->direction,r->filename,r->symbol_count);
+                r = r->next;
+            }
+
             bin = bin->pipe_next;
         }
         break;
