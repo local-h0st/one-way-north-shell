@@ -1,5 +1,5 @@
 #include <stdio.h>
-#include <unistd.h>     // getcwd, fork
+#include <unistd.h>     // getcwd, fork, gethostname
 #include <sys/types.h>  // uid_t, pid_t
 #include <pwd.h>        // getpwuid
 #include <string.h>     // strcpy
@@ -10,7 +10,18 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#define STATE_CWD_LEN 128
+#define KNRM "\x1B[0m"
+#define KRED "\x1B[31m"
+#define KGRN "\x1B[32m"
+#define KYEL "\x1B[33m"
+#define KBLU "\x1B[34m"
+#define KMAG "\x1B[35m"
+#define KCYN "\x1B[36m"
+#define KWHT "\x1B[37m"
+#define KNOR "\x1B[0m"
+#define KB "\x1B[1m"
+#define KI "\x1B[3m"
+
 #define STATE_INPUT_LEN 128
 #define PIPE_READ_BUFF_SIZE 8192
 
@@ -19,15 +30,14 @@ void printState(int);
 
 enum BUILD_IN_COMMAND{
     NOT_BUILD_IN_CMD = 0,
-    NULL_BINNAME,
     CMD_SH_HELP,
+    CMD_CD,
 };
 enum BUILD_IN_COMMAND isBuildInCmd(char *command){
-    if (command==NULL)
-        return NULL_BINNAME;
     if(!strcmp(command,"sh-help"))
         return CMD_SH_HELP;
-
+    if(!strcmp(command,"cd"))
+        return CMD_CD;
     return NOT_BUILD_IN_CMD;
 }
 
@@ -95,7 +105,6 @@ int deleteFragAll(struct COMMAND_FRAG *frag){   // will left the root node
 
 struct STATE_STRUCT {
     // TODO need free
-    char cwd[STATE_CWD_LEN];
     char input[STATE_INPUT_LEN];
     struct passwd *current_passwd;
     struct COMMAND_FRAG *command;
@@ -112,11 +121,53 @@ void printWelcome(){
     printf("\n");
     printf("\n");
 }
-void prompt(){  // here requires the input
-    printf("(%s) might be a prompt > ", State.current_passwd->pw_name);
-    // TODO with 'State'
+void flushAndPrompt(){  // here requires the input
+    State.current_passwd=getpwuid(getuid());
+    char cwd[128];
+    getcwd(cwd, 128);
+    char *home_path = getenv("HOME");
+    char host_name[64];
+    gethostname(host_name, 64);
+
+    printf(KGRN);
+    printf("(");
+    if(getuid()==0)
+        printf(KRED);
+    else
+        printf(KBLU);
+    printf(KB);
+    printf(KI);
+    printf("%s's %s", State.current_passwd->pw_name, host_name);
+    printf(KNOR);
+    printf(KGRN);
+    printf(")-[");
+    printf(KWHT);
+    printf(KB);
+    printf(KI);
+    if (strlen(cwd) >= strlen(home_path) && !strncmp(cwd,home_path,strlen(home_path))){
+        printf("~%s", cwd+strlen(home_path));
+    }
+    else{
+        printf("%s", cwd);
+    }
+    printf(KNOR);
+    printf(KGRN);
+    printf("]-");
+    printf(KB);
+    printf(KI);
+    if(getuid()==0)
+        printf(KRED);
+    else
+        printf(KBLU);
+    if(getuid()==0)
+        printf("# ");
+    else
+        printf("$ ");
+    printf(KNOR);
+    printf(KWHT);
+
     fgets(State.input, STATE_INPUT_LEN, stdin);
-    // readline lib ?
+    // TODO readline lib ?
 }
 
 int parseRedirect(struct COMMAND_FRAG * current_bin){
@@ -130,107 +181,73 @@ int parseRedirect(struct COMMAND_FRAG * current_bin){
         too hard to judge, must follow my gramma !
         */
 
-        if (!strcmp(arg->arg,">")){
-            if (current_bin->redirect == NULL){
-                current_bin->redirect = (struct REDIRECT_INFO *)malloc(sizeof(struct REDIRECT_INFO));
-                r = current_bin->redirect;
-            }
-            else{
-                r->next = (struct REDIRECT_INFO *)malloc(sizeof(struct REDIRECT_INFO));
-                r = r->next;
-            }
-            initRedirNull(r);
+       // support '>filename' recognization
+       // if you meet a arg start with ", that's ok, the if-else still works.
+
+        if (arg->arg[0] != '>' && arg->arg[0] != '<'){
+            true_arg = arg;
+            arg = arg->arg_next;
+            continue;
+        }
+
+        if (current_bin->redirect == NULL){
+            current_bin->redirect = (struct REDIRECT_INFO *)malloc(sizeof(struct REDIRECT_INFO));
+            r = current_bin->redirect;
+        }
+        else{
+            r->next = (struct REDIRECT_INFO *)malloc(sizeof(struct REDIRECT_INFO));
+            r = r->next;
+        }
+        initRedirNull(r);
+
+        if(arg->arg[0] == '>')
             r->direction = 1;
-            r->symbol_count = 1;
-            r->filename = (char *)malloc((strlen(arg->arg_next->arg)+1)*sizeof(char));
-            strcpy(r->filename,arg->arg_next->arg);
-            true_arg->arg_next = arg->arg_next->arg_next;
-            free(arg->arg_next->arg);
-            free(arg->arg);
-            free(arg);
-            arg = true_arg->arg_next;
-        }
-        else if (!strcmp(arg->arg,"<")){
-            if (current_bin->redirect == NULL){
-                current_bin->redirect = (struct REDIRECT_INFO *)malloc(sizeof(struct REDIRECT_INFO));
-                r = current_bin->redirect;
-            }
-            else{
-                r->next = (struct REDIRECT_INFO *)malloc(sizeof(struct REDIRECT_INFO));
-                r = r->next;
-            }
-            initRedirNull(r);
+        else
             r->direction = 2;
-            r->symbol_count = 1;
-            r->filename = (char *)malloc((strlen(arg->arg_next->arg)+1)*sizeof(char));
-            strcpy(r->filename,arg->arg_next->arg);
-            true_arg->arg_next = arg->arg_next->arg_next;
-            free(arg->arg_next->arg);
-            free(arg->arg);
-            free(arg);
-            arg = true_arg->arg_next;
-        }
-        else if (!strcmp(arg->arg,">>")){
-            if (current_bin->redirect == NULL){
-                current_bin->redirect = (struct REDIRECT_INFO *)malloc(sizeof(struct REDIRECT_INFO));
-                r = current_bin->redirect;
-            }
-            else{
-                r->next = (struct REDIRECT_INFO *)malloc(sizeof(struct REDIRECT_INFO));
-                r = r->next;
-            }
-            initRedirNull(r);
-            r->direction = 1;
+        r->symbol_count = 1;
+        if(arg->arg[1] == arg->arg[0])
             r->symbol_count = 2;
-            r->filename = (char *)malloc((strlen(arg->arg_next->arg)+1)*sizeof(char));
-            strcpy(r->filename,arg->arg_next->arg);
-            true_arg->arg_next = arg->arg_next->arg_next;
-            free(arg->arg_next->arg);
-            free(arg->arg);
-            free(arg);
-            arg = true_arg->arg_next;
-        }
-        else if (!strcmp(arg->arg,"<<")){
-            if (current_bin->redirect == NULL){
-                current_bin->redirect = (struct REDIRECT_INFO *)malloc(sizeof(struct REDIRECT_INFO));
-                r = current_bin->redirect;
-            }
-            else{
-                r->next = (struct REDIRECT_INFO *)malloc(sizeof(struct REDIRECT_INFO));
-                r = r->next;
-            }
-            initRedirNull(r);
-            r->direction = 2;
-            r->symbol_count = 2;
-            r->filename = (char *)malloc((strlen(arg->arg_next->arg)+1)*sizeof(char));
-            strcpy(r->filename,arg->arg_next->arg);
-            true_arg->arg_next = arg->arg_next->arg_next;
-            free(arg->arg_next->arg);
+        if(strcmp(arg->arg+r->symbol_count,"")){
+            // have chars after redirection symbol
+            r->filename = (char *)malloc((strlen(arg->arg)+1-r->symbol_count)*sizeof(char));
+            strcpy(r->filename,arg->arg+r->symbol_count);
+            true_arg->arg_next = arg->arg_next;
             free(arg->arg);
             free(arg);
             arg = true_arg->arg_next;
         }
         else{
-            true_arg = arg;
-            arg = arg->arg_next;
+            r->filename = (char *)malloc((strlen(arg->arg_next->arg)+1)*sizeof(char));
+            strcpy(r->filename,arg->arg_next->arg);
+            true_arg->arg_next = arg->arg_next->arg_next;
+            free(arg->arg_next->arg);
+            free(arg->arg);
+            free(arg);
+            arg = true_arg->arg_next;
         }
-
     }
 }
-
 int parseCommand(){
     char temp[STATE_INPUT_LEN];
     int temp_index = 0;
     int is_binname = 2; // 2 the first, 1 after |, 0 the arg.
     struct COMMAND_FRAG *bin_head = NULL;
     struct COMMAND_FRAG *last_arg = NULL;
-    // int quot_count = 0;  // TODO add quot support
+    int quot_count = 0;  // only support "
     // first parse redirect as params, then parse redirect info, because redirect needs higher privilege
     for(int i = 0; i < STATE_INPUT_LEN && State.input[i] != '\0'; i++){ // last is \n and then is \0
-        // if (State.input[i] == '"')
-        //     quot_count++;
-        // if ((!isspace(State.input[i]) && State.input[i] != '|' && quot_count%2 == 0) || quot_count%2 == 1){
-        if (!isspace(State.input[i]) && State.input[i] != '|'){
+        if (State.input[i] == '"'){
+            quot_count++;
+            // TODO we should view '\' as a controller, 
+            // rather just look back when we meet a special char, e.g. '"'
+            // Though currently we don't need '\' in other places
+            if(i>0)
+                if(State.input[i-1] == '\\'){
+                    quot_count--;
+                    temp_index--;
+                }
+        }
+        if ((!isspace(State.input[i]) && State.input[i] != '|' && quot_count%2 == 0) || quot_count%2 == 1){
             temp[temp_index] = State.input[i];
             temp_index++;
         }
@@ -271,11 +288,11 @@ int parseCommand(){
             temp_index =0;
         }
 
-        if (State.input[i] == '|')
+        if (State.input[i] == '|' && quot_count%2 == 0)
             is_binname = 1;
     }
 
-    // TODO for every bin parse redirect info
+    // for every bin parse redirect info
     struct COMMAND_FRAG *current_bin = State.command;
     while (current_bin != NULL){
         parseRedirect(current_bin);
@@ -285,7 +302,6 @@ int parseCommand(){
 
 int executeOnce(struct COMMAND_FRAG *current_bin, int read_pipe_fd, int write_pipe_fd){
     // build arg list first
-    // TODO exclude redirect
     struct COMMAND_FRAG *temp = current_bin;
     int count = 1;
     while (temp->arg_next!=NULL){
@@ -298,6 +314,15 @@ int executeOnce(struct COMMAND_FRAG *current_bin, int read_pipe_fd, int write_pi
     temp = current_bin->arg_next;
     count = 1;
     while(temp!=NULL){
+        if(temp->arg[0] == '"'){
+            temp->arg[strlen(temp->arg)-1] = '\0';
+            char *str = (char *)malloc(strlen(temp->arg)*sizeof(char));
+            strcpy(str,temp->arg+1);
+            free(temp->arg);
+            temp->arg = (char *)malloc((strlen(str)+1)*sizeof(char));
+            strcpy(temp->arg,str);
+            free(str);
+        }
         arg_list[count] = temp->arg;
         count++;
         temp = temp->arg_next;
@@ -322,10 +347,10 @@ int executeOnce(struct COMMAND_FRAG *current_bin, int read_pipe_fd, int write_pi
             if(r->direction == 1 && write_pipe_fd == -1){
                 int w_fd;
                 if(r->symbol_count==1){
-                    w_fd = open(r->filename, O_WRONLY|O_CREAT|O_TRUNC);
+                    w_fd = open(r->filename, O_WRONLY|O_CREAT|O_TRUNC, S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
                 }
                 else{
-                    w_fd = open(r->filename, O_WRONLY|O_CREAT|O_APPEND);
+                    w_fd = open(r->filename, O_WRONLY|O_CREAT|O_APPEND, S_IRUSR|S_IWUSR|S_IRGRP|S_IROTH);
                 }
                 dup2(w_fd,STDOUT_FILENO);
                 close(w_fd);
@@ -387,16 +412,29 @@ int executeCommand(){
         }
 
         switch (isBuildInCmd(current_bin->binname)){
-        // TODO add pipe support for build-in commands.
-        // TODO add redirect suuport for build-in commands.
+        // TODO add pipe support and redirect support for build-in commands.
         case CMD_SH_HELP:
             printf("help document is not ready yet ~\n");
             break;
-        case NOT_BUILD_IN_CMD:
-            executeOnce(current_bin,read_pipe,write_pipe);
+        case CMD_CD:
+            if (current_bin->arg_next->arg==NULL){
+                printf("cd: need one argument.\n");
+            }
+            else{
+                int success;
+                if (current_bin->arg_next->arg[0] == '~'){
+                    success = chdir(getenv("HOME"));
+                    if (current_bin->arg_next->arg[1] == '/')
+                        success = chdir(current_bin->arg_next->arg+2);
+                }
+                else
+                    success = chdir(current_bin->arg_next->arg);
+                if (success == -1)
+                    printf("cd: chdir() failed.");
+            }
             break;
         default:
-            perror("unknown command.");
+            executeOnce(current_bin,read_pipe,write_pipe);
             break;
         }
 
@@ -461,11 +499,9 @@ int main(void){
     // init
     State.command = (struct COMMAND_FRAG *)malloc(sizeof(struct COMMAND_FRAG));
     initCmdFragNull(State.command);
-    State.current_passwd=getpwuid(getuid());    // current passwd file
-    getcwd(State.cwd, STATE_CWD_LEN);           // cwd
     printWelcome();
     while(1){
-        prompt();
+        flushAndPrompt();
         parseCommand();
         // printState(1);
         executeCommand();

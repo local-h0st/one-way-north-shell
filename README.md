@@ -1,5 +1,5 @@
 # one-way-north-shell
- os class design powered by redh3tALWAYS
+Operating System class design powered by redh3tALWAYS
 
 ### Naming Rules Specified
 vars: example_var
@@ -35,17 +35,27 @@ The raw user input `State.input` will be parsed into link table `State.command`.
 
 To handle with pipe `|`, parse function will do these: if it meets a `|`, the next word will be treated as a binname and put into struct `COMMAND_FRAG`, and the the struct will be linked after the last `COMMAND_FRAG` struct's pipe_next properity.
 
-Redirection is still under development, but soon.
-
 
 ### About Redirection
-Hard to recognize, we assume that the source of redirect 'from' less then 2
+Grammas are hard to recognize, we assume your input simple.
 
 As I test on kali's zsh, `echo 'test' 1 > a.txt && cat a.txt` finally gets `test 1`, and `echo 'test' 1 > a.txt && cat a.txt`gets `test`, that means there shouldn't be any space between fd and redirection symbol, but there can be space after the symbol.
 
 `cat | wc -l < README.md` will stuck on kali zsh, meaning README.md won't be treated as input to `cat`. Redirection needs the highest priviledge.
 
+**features:**
 
+Now only support grammas like: `> file`, `>file`, `>> file`, `>>file`, `< file`, `<file`, `<< file`, `<file`.
+
+At least one blank is needed before redirection symbol.
+
+Currently doesn't support fd.
+
+
+### About Quots
+If you wanna make ` `, `|`, `<`, `>` chars be recognized as one params, use `"` to include them. `"` will be thrown in function executeOnce(), just before they are send to be executed. If you just wanna input `"`, use `\"`.
+
+If you use `echo "aaa\"bbb"`, you will get the output like `aaa\"bbb`, this is nothing to do with my shell, my shell parse the `\"` correctly in the param's pass, this might because of how the `echo` handle with the single `"`.
 
 ### Things Not So Important
 
@@ -74,18 +84,5 @@ After fixed this, I found if a command contains more than 2 ( or 3? can't rememb
 
 Finally `ls /proc |grep 7| grep 8|grep 86 |grep 2 passed!` passed my code and executed successfully!
 
-**Temporary References:**
-
-https://mbinary.xyz/simple-shell.html
-
-https://zhuanlan.zhihu.com/p/360923356
-
-https://drustz.com/posts/2015/09/27/step-by-step-shell1/
-
-https://bmoos.github.io/2020/01/22/%E5%9C%A8Linux%E7%8E%AF%E5%A2%83%E4%B8%8B%E7%94%A8c%E5%AE%9E%E7%8E%B0%E7%AE%80%E6%98%93shell%E7%A8%8B%E5%BA%8F/
-
-https://bmoos.github.io/2020/01/15/fork/
-
-https://www.cnblogs.com/mickole/p/3187409.html
-
-https://developer.aliyun.com/article/990596
+**References:**
+[1](https://bmoos.github.io/2020/01/22/%E5%9C%A8Linux%E7%8E%AF%E5%A2%83%E4%B8%8B%E7%94%A8c%E5%AE%9E%E7%8E%B0%E7%AE%80%E6%98%93shell%E7%A8%8B%E5%BA%8F/), [2](https://drustz.com/posts/2015/09/27/step-by-step-shell1/), [3](https://mbinary.xyz/simple-shell.html), [4](https://developer.aliyun.com/article/990596), [5](https://www.cnblogs.com/mickole/p/3187409.html), [6](https://zhuanlan.zhihu.com/p/360923356)
