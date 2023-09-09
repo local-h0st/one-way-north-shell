@@ -1,6 +1,10 @@
 # one-way-north-shell
 Operating System class design powered by redh3tALWAYS
 
+***preview***
+
+![preview]()
+
 ### Naming Rules Specified
 vars: example_var
 
