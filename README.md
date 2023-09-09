@@ -1,9 +1,9 @@
 # one-way-north-shell
-Operating System class design powered by redh3tALWAYS
+Operating System class design powered by redh3tALWAYS.
 
 ***preview***
 
-![preview]()
+![preview](https://github.com/local-h0st/one-way-north-shell/blob/main/static/preview.png)
 
 ### Naming Rules Specified
 vars: example_var
