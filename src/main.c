@@ -418,14 +418,14 @@ int executeCommand(){
             printf("help document is not ready yet ~\n");
             break;
         case CMD_CD:
-            if (current_bin->arg_next->arg==NULL){
-                printf("cd: need one argument.\n");
+            int success;
+            if (current_bin->arg_next == NULL){
+                success = chdir(getenv("HOME"));
             }
             else{
-                int success;
                 if (current_bin->arg_next->arg[0] == '~'){
                     success = chdir(getenv("HOME"));
-                    if (current_bin->arg_next->arg[1] == '/')
+                    if (current_bin->arg_next->arg[1] == '/' && current_bin->arg_next->arg[2] != '\0')
                         success = chdir(current_bin->arg_next->arg+2);
                 }
                 else
