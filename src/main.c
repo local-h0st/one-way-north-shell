@@ -209,6 +209,7 @@ int parseRedirect(struct COMMAND_FRAG * current_bin){
             r->symbol_count = 2;
         if(strcmp(arg->arg+r->symbol_count,"")){
             // have chars after redirection symbol
+            // TODO like `cat <"git proxy.md"`
             r->filename = (char *)malloc((strlen(arg->arg)+1-r->symbol_count)*sizeof(char));
             strcpy(r->filename,arg->arg+r->symbol_count);
             true_arg->arg_next = arg->arg_next;
